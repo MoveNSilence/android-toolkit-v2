@@ -33,13 +33,36 @@ def connect_to_device(device_ip_port):
         print(f"[-] An error occurred: {e}")
         return False
 
+def execute_shell_command(command):
+    """Executes an ADB shell command and returns the output."""
+    try:
+        result = subprocess.run(
+            ["adb", "shell", command],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return result.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        print(f"[-] Command failed: {e}")
+        return None
+
+def pull_file(remote_path, local_path):
+    """Pulls a file from the device to the local machine."""
+    try:
+        subprocess.run(
+            ["adb", "pull", remote_path, local_path],
+            check=True
+        )
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"[-] Failed to pull file: {e}")
+        return False
+
 def list_partitions():
     """Lists the partitions on the connected device."""
     print("[*] Pulling partition table for analysis...")
-    try:
-        subprocess.run(["adb", "shell", "ls -l /dev/block/by-name/"], check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"[-] Failed to list partitions: {e}")
+    return execute_shell_command("ls -l /dev/block/by-name/")
 
 def main():
     parser = argparse.ArgumentParser(description="Connect to an Android device via ADB and list partitions.")
@@ -49,7 +72,9 @@ def main():
     check_adb_installed()
 
     if connect_to_device(args.ip):
-        list_partitions()
+        partitions = list_partitions()
+        if partitions:
+            print(partitions)
 
 if __name__ == "__main__":
     main()
