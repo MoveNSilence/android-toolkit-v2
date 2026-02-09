@@ -7,7 +7,8 @@ def check_adb_installed():
     """Checks if ADB is installed and available in the system path."""
     if shutil.which("adb") is None:
         print("[-] ADB is not installed or not found in PATH.")
-        sys.exit(1)
+        return False
+    return True
 
 def connect_to_device(device_ip_port):
     """Attempts to connect to the specified Android device via ADB."""
@@ -46,7 +47,8 @@ def main():
     parser.add_argument("ip", help="The IP address and port of the Android device (e.g., 192.168.1.11:5555)")
     args = parser.parse_args()
 
-    check_adb_installed()
+    if not check_adb_installed():
+        sys.exit(1)
 
     if connect_to_device(args.ip):
         list_partitions()
