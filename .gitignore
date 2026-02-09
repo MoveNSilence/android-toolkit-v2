@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.DS_Store
+god_tool.build/
+god_tool.dist/
+god_tool.onefile-build/
