@@ -13,7 +13,7 @@ except ImportError:
     from adb_connector import connect_to_device
 
 # Default target IP from snippet
-DEFAULT_TARGET_IP = "10.0.0.193:43261"
+DEFAULT_TARGET_IP = "10.0.0.193:34867"
 
 def analyze_partitions():
     """
