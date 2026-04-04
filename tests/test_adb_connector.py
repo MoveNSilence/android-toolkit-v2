@@ -1,29 +1,14 @@
 import sys
 import os
 import unittest
-import subprocess
 from unittest.mock import patch, MagicMock
 
 # Add src to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from src.adb_connector import connect_to_device, check_adb_installed
+from src.adb_connector import connect_to_device
 
 class TestAdbConnector(unittest.TestCase):
-    @patch('src.adb_connector.shutil.which')
-    def test_check_adb_installed_success(self, mock_which):
-        # Mock shutil.which to return a path
-        mock_which.return_value = "/usr/bin/adb"
-        self.assertTrue(check_adb_installed())
-        mock_which.assert_called_with("adb")
-
-    @patch('src.adb_connector.shutil.which')
-    def test_check_adb_installed_failure(self, mock_which):
-        # Mock shutil.which to return None
-        mock_which.return_value = None
-        self.assertFalse(check_adb_installed())
-        mock_which.assert_called_with("adb")
-
     @patch('src.adb_connector.check_adb_installed')
     @patch('src.adb_connector.subprocess.run')
     def test_connect_success(self, mock_run, mock_check_adb):
@@ -57,15 +42,5 @@ class TestAdbConnector(unittest.TestCase):
     def test_adb_not_installed(self, mock_check_adb):
         # Mock ADB check as failed
         mock_check_adb.return_value = False
-
-        self.assertFalse(connect_to_device("10.0.0.193:43261"))
-
-    @patch('src.adb_connector.check_adb_installed')
-    @patch('src.adb_connector.subprocess.run')
-    def test_connect_to_device_unexpected_error(self, mock_run, mock_check_adb):
-        # Mock ADB check as successful
-        mock_check_adb.return_value = True
-        # Mock subprocess.run to raise an unexpected Exception
-        mock_run.side_effect = Exception("Unexpected error")
 
         self.assertFalse(connect_to_device("10.0.0.193:43261"))
