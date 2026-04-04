@@ -10,19 +10,24 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from src.adb_connector import connect_to_device, check_adb_installed
 
 class TestAdbConnector(unittest.TestCase):
-    @patch('src.adb_connector.shutil.which')
-    def test_check_adb_installed_success(self, mock_which):
-        # Mock shutil.which to return a path
-        mock_which.return_value = "/usr/bin/adb"
+    @patch('src.adb_connector.subprocess.run')
+    def test_check_adb_installed_success(self, mock_run):
+        # Mock subprocess.run to return success
+        mock_run.return_value = MagicMock()
         self.assertTrue(check_adb_installed())
-        mock_which.assert_called_with("adb")
+        mock_run.assert_called_with(["adb", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
-    @patch('src.adb_connector.shutil.which')
-    def test_check_adb_installed_failure(self, mock_which):
-        # Mock shutil.which to return None
-        mock_which.return_value = None
+    @patch('src.adb_connector.subprocess.run')
+    def test_check_adb_installed_failure_filenotfound(self, mock_run):
+        # Mock subprocess.run to raise FileNotFoundError
+        mock_run.side_effect = FileNotFoundError
         self.assertFalse(check_adb_installed())
-        mock_which.assert_called_with("adb")
+
+    @patch('src.adb_connector.subprocess.run')
+    def test_check_adb_installed_failure_error(self, mock_run):
+        # Mock subprocess.run to raise CalledProcessError
+        mock_run.side_effect = subprocess.CalledProcessError(1, 'adb')
+        self.assertFalse(check_adb_installed())
 
     @patch('src.adb_connector.check_adb_installed')
     @patch('src.adb_connector.subprocess.run')

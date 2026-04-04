@@ -1,14 +1,14 @@
 import subprocess
-import argparse
-import sys
-import shutil
 
 def check_adb_installed():
-    """Checks if ADB is installed and available in the system path."""
-    if shutil.which("adb") is None:
-        print("[-] ADB is not installed or not found in PATH.")
+    """
+    Checks if ADB is installed and accessible.
+    """
+    try:
+        subprocess.run(["adb", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        return True
+    except (FileNotFoundError, subprocess.CalledProcessError):
         return False
-    return True
 
 def connect_to_device(device_ip_port):
     """
