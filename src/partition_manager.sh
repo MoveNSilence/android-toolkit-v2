@@ -1,39 +1,38 @@
 #!/system/bin/sh
-# GodTool_V2 - Partition Rewrite Module
-# Targets: prism (sda34), modemst1 (sda1), modemst2 (sda2)
+# GodTool_V2 - Partition Rewrite Module (Pristine Version)
+# Targets: prism, modemst1, modemst2
 
 PARTITION=$1
 IMAGE_IN=$2
 
-# 1. Whitelist & Path Resolution
+# Whitelist Resolution
 case $PARTITION in
     prism|modemst1|modemst2)
         TARGET_BLOCK=$(readlink -f /dev/block/by-name/$PARTITION)
         ;;
     *)
-        echo "[X] Error: Partition $PARTITION is not in the whitelist."
+        echo "[X] Error: Unauthorized partition."
         exit 1
         ;;
 esac
 
-# 2. Mandatory Golden Backup
-echo "[+] Creating Golden Backup of $PARTITION..."
+# Golden Backup Protocol
+echo "[+] Creating Golden Backup..."
 mkdir -p /sdcard/GodTool_Backups/
 if dd if=$TARGET_BLOCK of=/sdcard/GodTool_Backups/${PARTITION}_orig.img bs=4096 conv=notrunc; then
     sync
-    echo "[+] Backup verified and synced."
 else
-    echo "[X] Critical Error: Backup failed. Aborting write."
+    echo "[X] Backup Failed. Overwrite Aborted."
     exit 1
 fi
 
-# 3. Raw Write Execution
+# Raw DD Write Logic
 if [ -f "$IMAGE_IN" ]; then
-    echo "[!] Rewriting $PARTITION at $TARGET_BLOCK..."
+    echo "[!] Executing Raw DD Write to $TARGET_BLOCK..."
     dd if=$IMAGE_IN of=$TARGET_BLOCK bs=4096 conv=notrunc
     sync
-    echo "[+] Rewrite Complete. System Sync'd."
+    echo "[+] Rewrite Successful."
 else
-    echo "[X] Error: Source image $IMAGE_IN not found."
+    echo "[X] Source Image Missing."
     exit 1
 fi
