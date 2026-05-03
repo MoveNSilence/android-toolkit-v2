@@ -12,9 +12,6 @@ except ImportError:
     # If run as a script from root, this might be needed or if installed as package
     from adb_connector import connect_to_device
 
-# Default target IP from snippet
-DEFAULT_TARGET_IP = "10.0.0.193:34867"
-
 def analyze_partitions():
     """
     Analyzes the partition table by listing /dev/block/by-name/
@@ -27,11 +24,19 @@ def analyze_partitions():
 
 def main():
     parser = argparse.ArgumentParser(description="GodTool V2 - Android Repair & Analysis Tool")
-    parser.add_argument("--target", default=DEFAULT_TARGET_IP, help="Target device IP:PORT")
+    parser.add_argument("--target", help="Target device IP:PORT")
 
     args = parser.parse_args()
 
-    if connect_to_device(args.target):
+    # Priority: 1. Command-line argument, 2. Environment variable
+    target = args.target or os.environ.get("GOD_TOOL_TARGET")
+
+    if not target:
+        print("[X] Error: No target device specified.")
+        print("    Use --target <IP:PORT> or set the GOD_TOOL_TARGET environment variable.")
+        sys.exit(1)
+
+    if connect_to_device(target):
         analyze_partitions()
     else:
         sys.exit(1)

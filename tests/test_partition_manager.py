@@ -14,7 +14,7 @@ class TestPartitionManager(unittest.TestCase):
         with open('src/partition_manager.sh', 'r') as f:
             content = f.read()
             self.assertIn('dd if=', content)
-            self.assertIn('bs=4096', content)
+            self.assertIn('bs=1M', content)
             self.assertIn('sync', content)
             self.assertIn('/sdcard/GodTool_Backups/', content)
 

@@ -1,5 +1,6 @@
 import unittest
 import subprocess
+import os
 from unittest.mock import patch, MagicMock
 from src.modem import backup_efs, wipe_efs, enable_diag_mode, get_remote_md5
 
@@ -28,10 +29,7 @@ class TestModem(unittest.TestCase):
         # Verify calls
         self.assertTrue(mock_makedirs.called)
         self.assertTrue(mock_run.called)
-        # Verify dd called for 3 partitions
-        # Verify md5sum called for 3 partitions
-        # Verify pull called for 3 partitions
-        # Verify rm called for 3 partitions
+        # Verify dd, md5sum, pull, rm called for 3 partitions
         self.assertEqual(mock_run.call_count, 4 * 3)
 
     @patch("src.modem.subprocess.run")
@@ -43,18 +41,28 @@ class TestModem(unittest.TestCase):
             wipe_efs("192.168.1.1:5555")
 
         self.assertIn("Backup for modemst1 not found", str(context.exception))
-        self.assertFalse(mock_run.called) # Should not run dd if backup missing
+        self.assertFalse(mock_run.called) # Should not run if backup missing
 
     @patch("src.modem.subprocess.run")
     @patch("src.modem.os.path.exists")
-    def test_wipe_efs_success(self, mock_exists, mock_run):
+    @patch("src.modem.calculate_local_md5")
+    def test_wipe_efs_success(self, mock_calc_md5, mock_exists, mock_run):
         mock_exists.return_value = True # Backup exists
+        mock_calc_md5.return_value = "d41d8cd98f00b204e9800998ecf8427e"
+
+        # Mock subprocess.run for remote md5sum check
+        mock_run.return_value = MagicMock(stdout="d41d8cd98f00b204e9800998ecf8427e /dev/block/by-name/modemst1")
 
         wipe_efs("192.168.1.1:5555")
 
         self.assertTrue(mock_run.called)
-        # Verify dd if=/dev/zero called 3 times
-        self.assertEqual(mock_run.call_count, 3)
+        # 1 md5sum per partition + 1 compound dd command = 3 + 1 = 4 calls
+        self.assertEqual(mock_run.call_count, 4)
+
+        # Verify compound command
+        last_call_args = mock_run.call_args[0][0]
+        self.assertIn(" && ", last_call_args[-1])
+        self.assertIn("dd if=/dev/zero", last_call_args[-1])
 
     @patch("src.modem.subprocess.run")
     def test_enable_diag_mode(self, mock_run):

@@ -1,6 +1,15 @@
 import subprocess
 import os
 import hashlib
+import re
+
+EFS_PARTITIONS = ["modemst1", "modemst2", "fsg"]
+
+def is_safe_name(name):
+    """
+    Validates if a partition name is safe to use in shell commands.
+    """
+    return bool(re.match(r'^[a-zA-Z0-9_\-\.]+$', name))
 
 def run_adb_command(command_list, device_ip=None):
     """
@@ -33,30 +42,57 @@ def enable_diag_mode(device_ip):
     except Exception as e:
         print(f"[-] Failed to enable Diag Mode: {e}")
 
-def get_remote_md5(file_path, device_ip):
+def get_remote_md5(file_path, device_ip, use_su=False):
     """
-    Calculates MD5 checksum of a remote file on the device.
+    Calculates MD5 checksum of a remote file or block device on the device.
     """
-    output = run_adb_command(["shell", "md5sum", file_path], device_ip)
-    # Output format: "hash  filepath" or just "hash" depending on toybox/busybox
-    # Usually: "d41d8cd98f00b204e9800998ecf8427e  /sdcard/file"
+    cmd = ["shell"]
+    if use_su:
+        cmd.extend(["su", "-c", f"md5sum {file_path}"])
+    else:
+        cmd.extend(["md5sum", file_path])
+
+    output = run_adb_command(cmd, device_ip)
+    return output.split()[0]
+
+def get_remote_sha256(file_path, device_ip, use_su=False):
+    """
+    Calculates SHA-256 checksum of a remote file on the device.
+    """
+    cmd = ["shell"]
+    if use_su:
+        cmd.extend(["su", "-c", f"sha256sum {file_path}"])
+    else:
+        cmd.extend(["sha256sum", file_path])
+
+    output = run_adb_command(cmd, device_ip)
     return output.split()[0]
 
 def calculate_local_md5(file_path):
     """
-    Calculates MD5 checksum of a local file.
+    Calculates MD5 checksum of a local file using 64KB chunks for performance.
     """
     hash_md5 = hashlib.md5()
     with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(4096), b""):
+        for chunk in iter(lambda: f.read(65536), b""):
             hash_md5.update(chunk)
     return hash_md5.hexdigest()
 
+def calculate_local_sha256(file_path):
+    """
+    Calculates SHA-256 checksum of a local file using 64KB chunks for performance.
+    """
+    hash_sha256 = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            hash_sha256.update(chunk)
+    return hash_sha256.hexdigest()
+
 def backup_efs(device_ip, backup_dir="backups"):
     """
-    Backs up EFS partitions (modemst1, modemst2, fsg).
+    Backs up EFS partitions (modemst1, modemst2, fsg) with high performance.
     """
-    partitions = ["modemst1", "modemst2", "fsg"]
+    partitions = EFS_PARTITIONS
 
     if not os.path.exists(backup_dir):
         os.makedirs(backup_dir)
@@ -64,14 +100,15 @@ def backup_efs(device_ip, backup_dir="backups"):
     print(f"[*] Starting EFS backup for {device_ip}...")
 
     for partition in partitions:
+        if not is_safe_name(partition):
+            raise ValueError(f"Unsafe partition name: {partition}")
+
         remote_path = f"/sdcard/{partition}.img"
         # 1. Dump partition
         print(f"[*] Dumping {partition}...")
-        # Note: Partition path might vary. Assuming /dev/block/bootdevice/by-name/
-        # Checks if we should look up the path first?
-        # For now, use the standard Qualcomm path.
-        dd_cmd = f"dd if=/dev/block/bootdevice/by-name/{partition} of={remote_path}"
-        run_adb_command(["shell", dd_cmd], device_ip)
+        target_partition_path = f"/dev/block/by-name/{partition}"
+        dd_cmd = f"dd if={target_partition_path} of={remote_path} bs=1M conv=notrunc"
+        run_adb_command(["shell", "su", "-c", dd_cmd], device_ip)
 
         # 2. Calculate Remote MD5
         remote_md5 = get_remote_md5(remote_path, device_ip)
@@ -96,32 +133,46 @@ def backup_efs(device_ip, backup_dir="backups"):
 
 def wipe_efs(device_ip, backup_dir="backups"):
     """
-    Wipes EFS partitions after verifying backup.
+    Wipes EFS partitions after mandatory integrity check against local backups.
+    Optimized via compound ADB shell commands.
     """
-    partitions = ["modemst1", "modemst2", "fsg"]
+    partitions = EFS_PARTITIONS
 
     print(f"[*] Initiating EFS Wipe for {device_ip}...")
     print("[!] WARNING: This is a destructive operation!")
 
-    # 1. Verify Backups Exist
+    # 1. Mandatory Integrity Check
+    wipe_commands = []
     for partition in partitions:
+        if not is_safe_name(partition):
+             raise ValueError(f"Unsafe partition name: {partition}")
+
         local_path = os.path.join(backup_dir, f"{partition}.img")
         if not os.path.exists(local_path):
             raise Exception(f"Backup for {partition} not found in {backup_dir}. Aborting wipe.")
-        # Optional: Verify backup integrity again? Maybe too slow.
 
-    print("[+] Backups verified. Proceeding with wipe.")
+        print(f"[*] Verifying integrity of {partition} before wipe...")
+        local_md5 = calculate_local_md5(local_path)
+        target_partition_path = f"/dev/block/by-name/{partition}"
 
-    for partition in partitions:
-        print(f"[*] Wiping {partition}...")
-        # wipe using dd from /dev/zero
-        dd_cmd = f"dd if=/dev/zero of=/dev/block/bootdevice/by-name/{partition}"
-        try:
-            run_adb_command(["shell", dd_cmd], device_ip)
-            print(f"[+] Wiped {partition}.")
-        except Exception as e:
-             print(f"[-] Failed to wipe {partition}: {e}")
-             raise
+        # Get remote MD5 of the live partition
+        remote_md5 = get_remote_md5(target_partition_path, device_ip, use_su=True)
+
+        if local_md5 != remote_md5:
+            raise Exception(f"Integrity check failed for {partition}! Local backup does not match live partition.")
+
+        wipe_commands.append(f"dd if=/dev/zero of={target_partition_path} bs=1M conv=notrunc")
+
+    print("[+] Integrity check passed for all partitions. Proceeding with wipe.")
+
+    # 2. Optimized Wipe execution
+    compound_cmd = " && ".join(wipe_commands)
+    try:
+        run_adb_command(["shell", "su", "-c", compound_cmd], device_ip)
+        print("[+] All partitions wiped successfully.")
+    except Exception as e:
+        print(f"[-] Wipe operation failed: {e}")
+        raise
 
     print("[+] EFS Wipe completed.")
 
@@ -129,6 +180,9 @@ def flash_partition(device_ip, partition_name, local_image_path):
     """
     Flashes a local image to the specified partition on the device.
     """
+    if not is_safe_name(partition_name):
+        raise ValueError(f"Unsafe partition name: {partition_name}")
+
     if not os.path.exists(local_image_path):
         raise FileNotFoundError(f"Local image file not found: {local_image_path}")
 
@@ -144,7 +198,7 @@ def flash_partition(device_ip, partition_name, local_image_path):
     target_partition_path = f"/dev/block/by-name/{partition_name}"
 
     print(f"[*] Writing to {target_partition_path}...")
-    dd_cmd = f"dd if={remote_temp_path} of={target_partition_path}"
+    dd_cmd = f"dd if={remote_temp_path} of={target_partition_path} bs=1M conv=notrunc"
 
     try:
         # Use su -c because writing to block device usually requires root
